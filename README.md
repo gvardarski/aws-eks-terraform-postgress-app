@@ -68,18 +68,18 @@ terraform/modules/ecr              ECR repository for the app image
 terraform/modules/secrets-manager  Secrets Manager secret metadata
 ```
 
-Important configuration values are defined in `terraform/terraform.tfvars`. Before applying, set `admin_cidr` to your own public IP with `/32`, and adjust names, region, NAT shape, Kubernetes version, and node sizing if needed. The file is safe to commit because it does not contain passwords, AWS credentials, backend bucket names, or account-specific secret values.
+Important configuration values are defined in `terraform/terraform.tfvars`. Before applying, set `admin_cidr` to your own public IP with `/32`, and adjust names, region, NAT shape, Kubernetes version, and node sizing if needed.
 
 The Terraform backend is configured for S3 remote state using:
 
 ```text
 terraform/backend.tf
-terraform/backend.dev.tfbackend.example
+terraform/backend.dev.tfbackend
 ```
 
 The S3 bucket for Terraform state must exist before `terraform init`, because Terraform cannot create the backend bucket it is trying to use. Create it once from the AWS Console in S3, using a globally unique bucket name, with versioning enabled, server-side encryption enabled, and public access blocked.
 
-Then copy `terraform/backend.dev.tfbackend.example` to `terraform/backend.dev.tfbackend` and set the bucket name:
+Then edit `terraform/backend.dev.tfbackend` and set the bucket name:
 
 ```hcl
 bucket       = "replace-with-globally-unique-bucket-name"

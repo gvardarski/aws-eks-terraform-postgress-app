@@ -15,4 +15,4 @@ secrets/*.json
 *.tfvars
 !terraform/terraform.tfvars
 *.tfbackend
-!*.tfbackend.example
+!terraform/backend.dev.tfbackend
