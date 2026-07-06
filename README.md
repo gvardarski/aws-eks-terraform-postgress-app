@@ -232,6 +232,60 @@ Before applying the application manifests, install the required controllers with
 
 The Helm chart values should use the IAM role ARNs created by Terraform. External Secrets Operator uses the `external_secrets_role_arn` output on the `external-secrets` service account. AWS Load Balancer Controller uses the `aws_load_balancer_controller_role_arn` output on the `aws-load-balancer-controller` service account, together with the Terraform outputs for cluster name, region, and VPC ID.
 
+Collect the Terraform outputs used by the Helm charts:
+
+```bash
+AWS_REGION="$(terraform -chdir=terraform output -raw aws_region)"
+CLUSTER_NAME="$(terraform -chdir=terraform output -raw cluster_name)"
+VPC_ID="$(terraform -chdir=terraform output -raw vpc_id)"
+EXTERNAL_SECRETS_ROLE_ARN="$(terraform -chdir=terraform output -raw external_secrets_role_arn)"
+AWS_LBC_ROLE_ARN="$(terraform -chdir=terraform output -raw aws_load_balancer_controller_role_arn)"
+```
+
+Add the Helm chart repositories:
+
+```bash
+helm repo add external-secrets https://charts.external-secrets.io
+helm repo add eks https://aws.github.io/eks-charts
+helm repo update
+```
+
+Install External Secrets Operator:
+
+```bash
+helm upgrade --install external-secrets external-secrets/external-secrets \
+  --namespace external-secrets \
+  --create-namespace \
+  --set installCRDs=true \
+  --set serviceAccount.create=true \
+  --set serviceAccount.name=external-secrets \
+  --set-string serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$EXTERNAL_SECRETS_ROLE_ARN"
+```
+
+Install AWS Load Balancer Controller:
+
+```bash
+helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  --namespace kube-system \
+  --set clusterName="$CLUSTER_NAME" \
+  --set region="$AWS_REGION" \
+  --set vpcId="$VPC_ID" \
+  --set serviceAccount.create=true \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --set-string serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$AWS_LBC_ROLE_ARN"
+```
+
+Verify the controllers before applying the application manifests:
+
+```bash
+kubectl -n external-secrets rollout status deployment/external-secrets
+kubectl -n kube-system rollout status deployment/aws-load-balancer-controller
+kubectl wait --for=condition=Established \
+  crd/externalsecrets.external-secrets.io \
+  crd/secretstores.external-secrets.io \
+  --timeout=120s
+```
+
 The API deployment is configured in:
 
 ```text
