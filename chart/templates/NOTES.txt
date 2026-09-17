@@ -1,0 +1,31 @@
+Release {{ .Release.Name }} deployed to namespace {{ .Release.Namespace }}.
+
+{{- if eq .Values.api.service.type "LoadBalancer" }}
+
+Docker Desktop publishes LoadBalancer services on localhost, so the API is at:
+
+    http://localhost:{{ .Values.api.service.port }}/
+
+Try the CRUD endpoints:
+
+    curl http://localhost:{{ .Values.api.service.port }}/healthz
+    curl http://localhost:{{ .Values.api.service.port }}/items
+    curl -X POST http://localhost:{{ .Values.api.service.port }}/items \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"first item","description":"created locally"}'
+{{- else }}
+
+Forward the API service to reach it locally:
+
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "inventory.api.fullname" . }} 8080:{{ .Values.api.service.port }}
+    curl http://localhost:8080/healthz
+{{- end }}
+
+Interactive API docs are served at /docs.
+
+{{- if .Values.postgres.auth.existingSecret }}
+
+PostgreSQL credentials are read from the pre-existing Secret
+"{{ .Values.postgres.auth.existingSecret }}" in namespace {{ .Release.Namespace }}.
+Create it with scripts/local-secret.sh before the first sync.
+{{- end }}

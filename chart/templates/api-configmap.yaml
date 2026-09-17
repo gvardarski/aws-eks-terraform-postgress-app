@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "inventory.api.fullname" . }}
+  labels:
+    {{- include "inventory.labels" . | nindent 4 }}
+    {{- include "inventory.api.selectorLabels" . | nindent 4 }}
+data:
+  DB_HOST: {{ include "inventory.postgres.fullname" . | quote }}
+  DB_PORT: {{ .Values.postgres.service.port | quote }}
+  {{- range $key, $value := .Values.api.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

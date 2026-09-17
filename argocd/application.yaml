@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: inventory
+  namespace: argocd
+  finalizers:
+    # Remove the deployed workloads when this Application is deleted.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/gvardarski/aws-eks-terraform-postgress-app.git
+    targetRevision: feature/local-testing
+    path: chart
+    helm:
+      releaseName: inventory
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: inventory
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

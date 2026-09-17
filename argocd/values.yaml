@@ -1,0 +1,34 @@
+# Argo CD values for a local Docker Desktop cluster.
+# Applied by scripts/local-argocd.sh through the argo-cd Helm chart.
+
+configs:
+  params:
+    # Serve plain HTTP so `kubectl port-forward` works without TLS warnings.
+    server.insecure: true
+
+# Components that a single-user local install does not need.
+# The ApplicationSet controller has no toggle in this chart version, so it
+# stays installed.
+dex:
+  enabled: false
+
+notifications:
+  enabled: false
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+server:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi

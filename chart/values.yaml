@@ -1,0 +1,65 @@
+# Default values target a local Docker Desktop Kubernetes cluster.
+
+nameOverride: ""
+fullnameOverride: ""
+
+api:
+  replicaCount: 2
+
+  image:
+    repository: inventory-api
+    tag: local
+    # The image is built straight into the local Docker Desktop image store,
+    # so it must never be pulled from a remote registry.
+    pullPolicy: IfNotPresent
+
+  service:
+    # Docker Desktop publishes LoadBalancer services on localhost.
+    type: LoadBalancer
+    port: 80
+
+  # Extra non-secret environment variables handed to the API container.
+  config:
+    DB_POOL_MAX: "5"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+postgres:
+  image:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+
+  service:
+    port: 5432
+
+  auth:
+    # Name of a Secret that already exists in the release namespace. Created by
+    # scripts/local-secret.sh so that no credentials have to live in Git.
+    # Clear this value to let the chart render the Secret from the fields below.
+    existingSecret: postgres-secret
+    database: inventory
+    username: inventory
+    # Only read when existingSecret is empty. Leave unset in committed values.
+    password: ""
+
+  persistence:
+    enabled: true
+    size: 5Gi
+    # Empty means the cluster default StorageClass, which Docker Desktop
+    # provides through its local-path provisioner.
+    storageClassName: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
