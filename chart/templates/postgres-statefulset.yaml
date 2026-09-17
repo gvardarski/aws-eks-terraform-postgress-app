@@ -64,7 +64,11 @@ spec:
       {{- end }}
   {{- if .Values.postgres.persistence.enabled }}
   volumeClaimTemplates:
-    - metadata:
+    # apiVersion and kind are set explicitly because the API server populates
+    # them on the stored object; omitting them leaves Argo CD permanently OutOfSync.
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: postgres-data
       spec:
         accessModes:
