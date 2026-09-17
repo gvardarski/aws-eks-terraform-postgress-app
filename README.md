@@ -51,11 +51,17 @@ The application is exposed publicly through the ALB. PostgreSQL is not public; i
 
 ```text
 app/        FastAPI CRUD application and Dockerfile
+argocd/     Argo CD install values and the Application that deploys the chart
+chart/      Helm chart used for the local Docker Desktop deployment
 k8s/        Kubernetes manifests for PostgreSQL, secrets, API, service, and ingress
-scripts/    Helper script for building and pushing the Docker image
+scripts/    Helper scripts for image build and for the local Argo CD workflow
 secrets/    Example PostgreSQL secret payload
 terraform/  AWS infrastructure code split into local modules
 ```
+
+The repository supports two deployment paths that do not overlap. Sections 1 to 4
+describe the AWS EKS path built from `terraform/` and `k8s/`. Section 5 describes a
+local path built from `chart/` and `argocd/`, which needs no AWS account.
 
 ## 1. Provisioning Infrastructure With Terraform
 
@@ -326,3 +332,165 @@ After the Ingress receives an ALB hostname, the application is available at:
 ```text
 http://<alb-dns-name>/docs
 ```
+
+## 5. Local Deployment With Docker Desktop And Argo CD
+
+This section replaces sections 1 to 4 with a local workflow. It needs no AWS
+account: the cluster is the one built into Docker Desktop, and the application is
+deployed by Argo CD from the Helm chart in `chart/`.
+
+### What Differs From The AWS Path
+
+The chart deliberately drops the pieces that only exist on EKS:
+
+```text
+ALB Ingress            replaced by a LoadBalancer Service on localhost
+gp3 EBS StorageClass   replaced by the cluster default StorageClass
+External Secrets       replaced by a Secret created with scripts/local-secret.sh
+ECR image              replaced by an image built into the local image store
+```
+
+Everything else is unchanged. PostgreSQL is still a StatefulSet with a persistent
+volume, it is still reachable only through an internal `ClusterIP` service, and the
+API still reads its credentials from a Secret rather than from the manifests.
+
+### Prerequisites
+
+Docker Desktop, `kubectl`, and Helm. Enable Kubernetes in Docker Desktop under
+Settings, Kubernetes, Enable Kubernetes, and wait until it reports running:
+
+```bash
+docker desktop kubernetes status
+kubectl config use-context docker-desktop
+```
+
+### Quick Start
+
+One script performs the whole bootstrap:
+
+```bash
+./scripts/local-up.sh
+```
+
+It builds the image, creates the database Secret, installs Argo CD, registers the
+Argo CD Application, and waits until the application reports healthy.
+
+### What The Bootstrap Does
+
+The same steps can be run individually.
+
+Build the API image. Docker Desktop shares its image store with the Kubernetes
+node, so no registry and no push are involved, and the chart sets
+`imagePullPolicy: IfNotPresent` so the image is never fetched remotely:
+
+```bash
+docker build -t inventory-api:local ./app
+```
+
+Create the database credentials. The password is generated locally and only ever
+exists in the cluster, which keeps it out of Git:
+
+```bash
+./scripts/local-secret.sh
+```
+
+Install Argo CD and print the admin password:
+
+```bash
+./scripts/local-argocd.sh
+```
+
+Register the Application, which is the only imperative step. From here on Argo CD
+pulls from Git:
+
+```bash
+kubectl apply -f argocd/application.yaml
+```
+
+### How The Deployment Works
+
+Argo CD runs inside the cluster and pulls the chart from GitHub, so it can only
+deploy what has been pushed. `argocd/application.yaml` points at a branch and a
+path:
+
+```yaml
+source:
+  repoURL: https://github.com/gvardarski/aws-eks-terraform-postgress-app.git
+  targetRevision: feature/local-testing
+  path: chart
+```
+
+Change `targetRevision` if the chart is tracked on a different branch.
+
+Argo CD renders the chart with `helm template` and applies the result itself, so no
+Helm release is stored in the cluster and `helm list -n inventory` stays empty. It
+then reports two independent values: `Sync`, which compares the cluster against
+Git, and `Health`, which reports whether the workloads actually work.
+
+Because `syncPolicy.automated` sets `prune` and `selfHeal`, Argo CD owns the
+resources. Editing them with `kubectl` is reverted within seconds, and removing a
+template from the chart deletes the matching resource from the cluster.
+
+### Using The Application
+
+Docker Desktop publishes LoadBalancer services on localhost:
+
+```bash
+curl http://localhost/healthz
+curl http://localhost/items
+curl -X POST http://localhost/items \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"laptop","description":"dev machine"}'
+```
+
+The Swagger UI is at `http://localhost/docs`.
+
+Open the Argo CD UI with a port-forward, then log in as `admin`:
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8080:80
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d
+```
+
+Inspect the workloads:
+
+```bash
+kubectl -n inventory get pods,svc,pvc
+kubectl -n argocd get application inventory
+```
+
+### Changing The Deployment
+
+Configuration changes go through Git, which is the whole point of the Argo CD
+setup. Edit `chart/values.yaml`, commit, and push; Argo CD applies the change on
+its next refresh, or immediately if the Application is refreshed from the UI.
+
+Application code changes are the exception. The image tag stays `inventory-api:local`,
+so Git does not change and Argo CD sees nothing to do. Rebuild and restart instead:
+
+```bash
+docker build -t inventory-api:local ./app
+kubectl -n inventory rollout restart deployment/inventory-api
+```
+
+### Stopping And Cleaning Up
+
+Deleting workloads with `kubectl` does not stop them, because self-heal recreates
+them. Remove the Application instead, which is what `scripts/local-down.sh` does:
+
+```bash
+./scripts/local-down.sh        # remove the app, keep Argo CD and the database volume
+./scripts/local-down.sh data   # also delete the namespace, volume, and Secret
+./scripts/local-down.sh all    # also uninstall Argo CD
+```
+
+The default keeps the volume and the Secret, because neither is managed by Argo CD,
+so re-applying the Application restores the app with its existing data.
+
+Always delete the Application before uninstalling Argo CD. The Application carries a
+finalizer that only the Argo CD controller can clear, so removing Argo CD first
+leaves the object stuck in `Terminating`.
+
+To stop Kubernetes itself, untick Enable Kubernetes in Docker Desktop settings, or
+reset the cluster with `docker desktop kubernetes reset-cluster`.
