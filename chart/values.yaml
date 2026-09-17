@@ -4,7 +4,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 api:
-  replicaCount: 3
+  replicaCount: 2
 
   image:
     repository: inventory-api
@@ -20,7 +20,7 @@ api:
 
   # Extra non-secret environment variables handed to the API container.
   config:
-    DB_POOL_MAX: "10"
+    DB_POOL_MAX: "5"
 
   resources:
     requests:
